@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>LSB Steganography - Encode & Decode</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f4f4; text-align: center; padding: 40px; }
+    #container { background: #fff; padding: 30px; border-radius: 8px; display: inline-block; box-shadow: 0 2px 8px #ccc; }
+    .tab { display: inline-block; padding: 10px 30px; cursor: pointer; border-radius: 8px 8px 0 0; background: #eee; margin-right: 2px; }
+    .tab.active { background: #0078d7; color: #fff; }
+    .tab-content { display: none; padding: 20px 0; }
+    .tab-content.active { display: block; }
+    input[type="file"], input[type="text"] { margin: 10px 0; }
+    #result, #decodeMessage { margin-top: 20px; }
+    #canvasEncode, #canvasDecode { display: none; }
+    button { padding: 8px 18px; border: none; background: #0078d7; color: #fff; border-radius: 4px; cursor: pointer; }
+    button:disabled { background: #aaa; }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <div>
+      <span class="tab active" id="tabEncode">Encode</span>
+      <span class="tab" id="tabDecode">Decode</span>
+    </div>
+    <div class="tab-content active" id="contentEncode">
+      <h2>LSB Steganography Encoder</h2>
+      <input type="file" id="imageInputEncode" accept="image/png"><br>
+      <input type="text" id="secretInput" placeholder="Enter secret message" size="40"><br>
+      <button id="encodeBtn" disabled>Encode & Download</button>
+      <div id="result"></div>
+      <canvas id="canvasEncode"></canvas>
+    </div>
+    <div class="tab-content" id="contentDecode">
+      <h2>LSB Steganography Decoder</h2>
+      <input type="file" id="imageInputDecode" accept="image/png"><br>
+      <button id="decodeBtn" disabled>Decode</button>
+      <div id="decodeMessage"></div>
+      <canvas id="canvasDecode"></canvas>
+    </div>
+  </div>
+  <script>
+    // Tab switching
+    document.getElementById('tabEncode').onclick = function() {
+      document.getElementById('tabEncode').classList.add('active');
+      document.getElementById('tabDecode').classList.remove('active');
+      document.getElementById('contentEncode').classList.add('active');
+      document.getElementById('contentDecode').classList.remove('active');
+    };
+    document.getElementById('tabDecode').onclick = function() {
+      document.getElementById('tabDecode').classList.add('active');
+      document.getElementById('tabEncode').classList.remove('active');
+      document.getElementById('contentDecode').classList.add('active');
+      document.getElementById('contentEncode').classList.remove('active');
+    };
+
+    // ENCODE
+    let imgEncode = new Image();
+    let imgEncodeLoaded = false;
+    document.getElementById('imageInputEncode').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        imgEncode.onload = function() {
+          imgEncodeLoaded = true;
+          document.getElementById('encodeBtn').disabled = false;
+        };
+        imgEncode.src = evt.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+
+    document.getElementById('encodeBtn').addEventListener('click', function() {
+      if (!imgEncodeLoaded) return;
+      const secret = document.getElementById('secretInput').value + '|||END|||';
+      const binarySecret = Array.from(secret).map(c => c.charCodeAt(0).toString(2).padStart(8, '0')).join('');
+      const canvas = document.getElementById('canvasEncode');
+      canvas.width = imgEncode.width;
+      canvas.height = imgEncode.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(imgEncode, 0, 0);
+      const imageData = ctx.getImageData(0, 0, imgEncode.width, imgEncode.height);
+      const data = imageData.data;
+
+      if (binarySecret.length > data.length / 4) {
+        document.getElementById('result').textContent = "Message too long for this image!";
+        return;
+      }
+
+      let idx = 0;
+      for (let i = 0; i < data.length && idx < binarySecret.length; i += 4) {
+        data[i] = (data[i] & ~1) | parseInt(binarySecret[idx]);
+        idx++;
+      }
+      ctx.putImageData(imageData, 0, 0);
+
+      // Download the encoded image
+      const link = document.createElement('a');
+      link.download = 'encoded.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+      document.getElementById('result').textContent = "Image encoded and downloaded!";
+    });
+
+    // DECODE
+    let imgDecode = new Image();
+    let imgDecodeLoaded = false;
+    document.getElementById('imageInputDecode').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        imgDecode.onload = function() {
+          imgDecodeLoaded = true;
+          document.getElementById('decodeBtn').disabled = false;
+        };
+        imgDecode.src = evt.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+
+    document.getElementById('decodeBtn').addEventListener('click', function() {
+      if (!imgDecodeLoaded) return;
+      const canvas = document.getElementById('canvasDecode');
+      canvas.width = imgDecode.width;
+      canvas.height = imgDecode.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(imgDecode, 0, 0);
+      const imageData = ctx.getImageData(0, 0, imgDecode.width, imgDecode.height).data;
+      let binary = '';
+      for (let i = 0; i < imageData.length; i += 4) {
+        binary += (imageData[i] & 1).toString();
+      }
+      let message = '';
+      for (let i = 0; i < binary.length; i += 8) {
+        const byte = binary.substr(i, 8);
+        if (byte.length < 8) break;
+        const char = String.fromCharCode(parseInt(byte, 2));
+        message += char;
+        if (message.endsWith('|||END|||')) {
+          message = message.slice(0, -8);
+          break;
+        }
+      }
+      document.getElementById('decodeMessage').textContent = message || 'No hidden message found.';
+    });
+  </script>
+</body>
+</html>
